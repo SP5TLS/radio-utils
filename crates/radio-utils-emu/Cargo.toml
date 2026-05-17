@@ -5,7 +5,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OpenHPSDR Protocol 1 radio emulator"
+description = "OpenHPSDR Protocol 1 Hermes / Hermes Lite 2 emulator"
+readme = "README.md"
+keywords = ["ham-radio", "sdr", "hpsdr", "emulator", "amateur-radio"]
+categories = ["network-programming", "command-line-utilities", "simulation"]
+rust-version = "1.87"
 
 [dependencies]
 tokio = { workspace = true, features = ["sync", "time", "macros"] }
@@ -15,7 +19,7 @@ rand_distr = { workspace = true }
 num-complex = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
-radio-utils-protocol = { path = "../radio-utils-protocol", default-features = false, features = ["client"] }
+radio-utils-protocol = { path = "../radio-utils-protocol", version = "0.1.0", default-features = false, features = ["client"] }
 web-time = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

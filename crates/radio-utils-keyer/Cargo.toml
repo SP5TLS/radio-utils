@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "CW keyer engine — iambic A/B, straight key, macros, QSK"
+readme = "README.md"
+keywords = ["ham-radio", "morse", "cw", "keyer", "amateur-radio"]
+categories = ["embedded", "no-std", "multimedia::audio"]
+rust-version = "1.87"
 
 [features]
 default = ["std"]

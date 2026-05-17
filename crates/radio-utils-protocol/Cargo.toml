@@ -5,7 +5,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OpenHPSDR Protocol 1 & 2 client library"
+description = "OpenHPSDR Protocol 1 client library for Hermes / Hermes Lite 2"
+readme = "README.md"
+keywords = ["ham-radio", "sdr", "hpsdr", "openhpsdr", "amateur-radio"]
+categories = ["network-programming", "hardware-support"]
+rust-version = "1.87"
 
 [dependencies]
 tokio = { workspace = true, optional = true, features = ["net", "rt", "macros"] }
