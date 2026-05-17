@@ -586,10 +586,12 @@ impl Protocol1Client {
             .await?;
         }
 
-        // Send TX drive (address 0x12) + PA enable for HL2
+        // Send TX drive (address 0x12) + PA enable for HL2.
+        // Hermes leaves C2 zero; the rotating control packet then handles
+        // the Alex filter bits separately.
         let pa_c2 = match self.device.hw_type {
             HpsdrHw::HermesLite => 0x08,
-            _ => 0x00,
+            HpsdrHw::Hermes => 0x00,
         };
         self.send_control(0x12, self.tx_drive, pa_c2, 0, 0).await?;
 
@@ -777,7 +779,7 @@ impl Protocol1Client {
                 // Address 0x00: sample rate + nddc + duplex + OC outputs
                 let rate_code = sample_rate_to_p1_code(self.sample_rate);
                 let nddc_bits = ((self.nddc.max(1) - 1) & 0x07) << 3;
-                let duplex = 0x04; // always duplex (required by HL2, harmless for others)
+                let duplex = 0x04; // always duplex (required by HL2, harmless for Hermes)
                                    // OC outputs for HL2 N2ADR filter board (C2[7:1])
                 let c2 = match self.device.hw_type {
                     HpsdrHw::HermesLite => {
@@ -788,7 +790,7 @@ impl Protocol1Client {
                         };
                         n2adr_oc_for_freq(freq) << 1
                     }
-                    _ => 0,
+                    HpsdrHw::Hermes => 0,
                 };
                 (0x00, rate_code, c2, 0, nddc_bits | duplex)
             }
@@ -810,14 +812,14 @@ impl Protocol1Client {
                 (addr, b[0], b[1], b[2], b[3])
             }
             9 => {
-                // Address 0x12: TX drive + PA enable + Alex filters
+                // Address 0x12: TX drive + PA enable (HL2) or Alex filters (Hermes).
                 match self.device.hw_type {
                     HpsdrHw::HermesLite => {
                         // HL2: PA enable in C2, no Alex filters
                         (0x12, self.tx_drive, 0x08, 0, 0)
                     }
-                    _ => {
-                        // Standard HPSDR: Alex RX HPF in C3, Alex TX LPF in C4
+                    HpsdrHw::Hermes => {
+                        // Hermes: Alex RX HPF in C3, Alex TX LPF in C4
                         let c3 = alex_rx_hpf_for_freq(self.rx_frequencies[0]);
                         let c4 = alex_tx_lpf_for_freq(self.tx_frequency);
                         (0x12, self.tx_drive, 0, c3, c4)
@@ -831,8 +833,8 @@ impl Protocol1Client {
                         // HL2: step attenuator in C4 (direct value, 0-31)
                         (0x14, 0, 0, 0, self.rx_attenuation & 0x1F)
                     }
-                    _ => {
-                        // Standard: C4 bit 5 = 20dB attenuator
+                    HpsdrHw::Hermes => {
+                        // Hermes: C4 bit 5 = 20 dB attenuator
                         let c4 = if self.rx_attenuation >= 20 {
                             0x20
                         } else {
@@ -843,7 +845,7 @@ impl Protocol1Client {
                 }
             }
             11 => {
-                // Address 0x16: step attenuator values and CW keyer settings
+                // Address 0x16: step attenuator values and CW keyer settings.
                 (0x16, 0, 0, 0, 0)
             }
             12 => {
@@ -853,7 +855,7 @@ impl Protocol1Client {
                         // HL2: C3 = 0xC0 | rx_gain (bit 7=enable, bit 6=full-range, bits 5:0=value)
                         (0x1C, 0, 0, 0xC0 | (self.rx_attenuation & 0x3F), 0)
                     }
-                    _ => (0x1C, 0, 0, 0, 0),
+                    HpsdrHw::Hermes => (0x1C, 0, 0, 0, 0),
                 }
             }
             _ => (0x00, 0, 0, 0, 0),
@@ -1041,17 +1043,11 @@ fn parse_p1_discovery_response(data: &[u8], addr: SocketAddr) -> Option<Discover
     let protocol_version = data[11];
     let num_rxs = if data.len() > 20 { data[20] } else { 1 };
 
-    let protocol = if protocol_version == 0 {
-        Protocol::Protocol1
-    } else {
-        Protocol::Protocol2
-    };
-
-    let hw_type = if protocol == Protocol::Protocol1 {
-        HpsdrHw::from_p1_code(device_code)
-    } else {
-        HpsdrHw::from_p2_code(device_code)
-    };
+    // Only Protocol 1 (protocol_version == 0) is supported.
+    if protocol_version != 0 {
+        return None;
+    }
+    let hw_type = HpsdrHw::from_p1_code(device_code)?;
 
     // Use the radio's actual address (port 1024)
     let radio_addr = SocketAddr::new(addr.ip(), PORT);
@@ -1061,7 +1057,6 @@ fn parse_p1_discovery_response(data: &[u8], addr: SocketAddr) -> Option<Discover
         mac,
         hw_type,
         firmware_version,
-        protocol,
         num_rxs,
         status,
     })

@@ -10,13 +10,13 @@ emulator, with no broader SDR framework to drag along.
 | Crate | Purpose |
 |-------|---------|
 | [**radio-utils-keyer**](crates/radio-utils-keyer) | CW (Morse) keyer engine — iambic A/B, straight, bug, ultimatic, single-paddle, with Farnsworth spacing, weighting, dynamic dah ratio, sidetone generation, keyboard / serial-modem / MIDI / WebMIDI / Web-Serial / Android USB-OTG paddle inputs, and text macros. No workspace dependencies; the engine core is `no_std`. |
-| [**radio-utils-protocol**](crates/radio-utils-protocol) | Library implementation of the [OpenHPSDR](http://openhpsdr.org/) Protocol 1 (legacy 1032-byte UDP) and Protocol 2 (variable-length UDP) wire protocols — discovery, IQ pack/unpack, control commands, async `Protocol1Client` / `Protocol2Client`. `no_std`-friendly core types. |
-| [**radio-utils-emu**](crates/radio-utils-emu) | Standalone [OpenHPSDR](http://openhpsdr.org/) Protocol 1 hardware emulator. Lets you develop and test SDR clients (Thetis, deskHPSDR, custom code) against a virtual radio without owning hardware. Supports multi-client live-mixed echo for "virtual band" deployments. Depends on `radio-utils-protocol`. |
+| [**radio-utils-protocol**](crates/radio-utils-protocol) | Library implementation of the [OpenHPSDR](http://openhpsdr.org/) Protocol 1 (legacy 1032-byte UDP) wire format — discovery, IQ pack/unpack, control commands, async `Protocol1Client`. `no_std`-friendly core types. |
+| [**radio-utils-emu**](crates/radio-utils-emu) | Standalone [OpenHPSDR](http://openhpsdr.org/) Protocol 1 Hermes / Hermes Lite 2 emulator. Lets you develop and test SDR clients (Thetis, deskHPSDR, custom code) against a virtual radio without owning hardware. Supports multi-client live-mixed echo for "virtual band" deployments. Depends on `radio-utils-protocol`. |
 
 The [`protocol.md`](protocol.md) document describes the OpenHPSDR Protocol 1
-and Protocol 2 wire formats in detail (byte layouts, command codes, port
-assignments, timing) — it is what `radio-utils-protocol` and
-`radio-utils-emu` implement, and is independent of the keyer crate.
+wire format in detail (byte layouts, command codes, port assignments,
+timing) — it is what `radio-utils-protocol` and `radio-utils-emu`
+implement, and is independent of the keyer crate.
 
 ## Quick start
 
@@ -63,7 +63,6 @@ Dual-licensed under either of:
 at your option. Contributions are accepted under the same dual license.
 
 The protocol / emulator crates target [OpenHPSDR](http://openhpsdr.org/),
-a community project, and reference HPSDR hardware names (Hermes, Hermes
-Lite 2, Angelia, Orion, Saturn, etc.) only for protocol compatibility —
-they are not affiliated with the OpenHPSDR project. The keyer crate has
-no relation to OpenHPSDR.
+a community project, and reference the Hermes / Hermes Lite 2 hardware
+names only for protocol compatibility — they are not affiliated with the
+OpenHPSDR project. The keyer crate has no relation to OpenHPSDR.

@@ -1,12 +1,16 @@
 # radio-utils-emu
 
-`radio-utils-emu` is a Software Defined Radio emulator that implements the OpenHPSDR Protocol 1. It allows you to simulate HPSDR hardware on your network, making it possible to test SDR applications like Thetis or deskHPSDR without physical hardware.
+`radio-utils-emu` is a Software Defined Radio emulator that implements the
+OpenHPSDR Protocol 1 wire format for two target boards: the original
+Hermes and the Hermes Lite 2. It lets you simulate either radio on your
+network and test SDR applications like Thetis or deskHPSDR without
+physical hardware.
 
 ## Features
 
-- **Hardware emulation** — presents itself on the LAN as any of: Atlas,
-  Hermes, HermesII, Angelia, Orion, OrionMkII, Hermes Lite 2, Saturn,
-  Saturn MkII.
+- **Hardware emulation** — presents itself on the LAN as either a Hermes
+  (4 DDCs, Alex filters) or a Hermes Lite 2 (2 DDCs, N2ADR filter board,
+  HL2 step attenuator).
 - **Signal generation** — Gaussian noise on every DDC at a configurable
   level.
 - **Echo modes:**
@@ -40,7 +44,7 @@ will discover the emulator via UDP broadcast on port 1024.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--radio <TYPE>` | Hardware to emulate. One of: `atlas`, `hermes`, `hermesii`, `angelia`, `orion`, `orionmkii`, `hermeslite`, `saturn`, `saturnmkii`. | (required) |
+| `--radio <TYPE>` | Hardware to emulate. One of: `hermes`, `hermeslite` (alias: `hermeslite2`). | (required) |
 | `--mac <ADDR>` | MAC address as 6 hex bytes (separators optional, e.g. `00:1c:c0:a2:22:5e` or `001cc0a2225e`). | `02:AA:BB:CC:DD:EE` |
 | `--noise <LEVEL>` | Noise floor amplitude as a fraction of full scale. | `1.26e-5` |
 | `--echo` | Loop-mode echo: record TX during PTT, replay it on RX in a loop. | off |

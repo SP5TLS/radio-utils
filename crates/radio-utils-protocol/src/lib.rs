@@ -1,10 +1,10 @@
-//! HPSDR Protocol 1 and Protocol 2 client library.
+//! HPSDR Protocol 1 client library.
 //!
 //! Provides shared protocol types ([`HpsdrHw`], [`DiscoveredDevice`], [`RadioStatus`]),
 //! IQ sample pack/unpack routines (24-bit RX, 16-bit TX), and UDP transport abstractions.
 //!
-//! With the `client` feature enabled, includes [`Protocol1Client`] and [`Protocol2Client`]
-//! for discovery, streaming, and control command handling over UDP.
+//! With the `client` feature enabled, includes [`Protocol1Client`] for
+//! discovery, streaming, and control command handling over UDP.
 
 #[cfg(feature = "client")]
 mod discovery;
@@ -13,14 +13,10 @@ pub mod packets;
 #[cfg(feature = "client")]
 mod protocol1;
 #[cfg(feature = "client")]
-mod protocol2;
-#[cfg(feature = "client")]
 pub mod transport;
 pub use iq_accumulator::IqAccumulator;
 mod types;
 
 #[cfg(feature = "client")]
 pub use protocol1::{P1Command, Protocol1Client};
-#[cfg(feature = "client")]
-pub use protocol2::{P2Command, Protocol2Client};
 pub use types::*;

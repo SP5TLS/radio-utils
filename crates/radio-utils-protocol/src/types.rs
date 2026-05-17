@@ -26,163 +26,69 @@ pub enum ProtocolError {
 pub type Result<T> = std::result::Result<T, ProtocolError>;
 
 // ---------------------------------------------------------------------------
-// Protocol enum
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Protocol {
-    Protocol1,
-    Protocol2,
-}
-
-impl fmt::Display for Protocol {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Protocol1 => write!(f, "Protocol 1"),
-            Self::Protocol2 => write!(f, "Protocol 2"),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // HpsdrHw enum
 // ---------------------------------------------------------------------------
 
+/// Hardware identity of the radio. The crate targets two boards: the
+/// original Hermes and the Hermes Lite 2. Filter, attenuator, and PA
+/// wiring differ; the enum dispatches the variant-specific control bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HpsdrHw {
-    Atlas,
     Hermes,
-    HermesII,
-    Angelia,
-    Orion,
-    OrionMkII,
     HermesLite,
-    Saturn,
-    SaturnMkII,
-    Unknown(u8),
 }
 
 impl HpsdrHw {
+    /// Protocol 1 device-type code (byte 10 of the discovery response).
     pub fn p1_code(self) -> u8 {
         match self {
-            Self::Atlas => 0,
             Self::Hermes => 1,
-            Self::HermesII => 2,
-            Self::Angelia => 4,
-            Self::Orion => 5,
-            Self::OrionMkII => 10,
             Self::HermesLite => 6,
-            Self::Saturn => 12, // Distinct from OrionMkII (10); Saturn is primarily P2
-            Self::SaturnMkII => 11,
-            Self::Unknown(c) => c,
         }
     }
 
-    pub fn p2_code(self) -> u8 {
-        match self {
-            Self::Atlas => 0,
-            Self::Hermes => 1,
-            Self::HermesII => 2,
-            Self::Angelia => 3,
-            Self::Orion => 4,
-            Self::OrionMkII => 5,
-            Self::HermesLite => 6,
-            Self::Saturn => 10,
-            Self::SaturnMkII => 11,
-            Self::Unknown(c) => c,
-        }
-    }
-
-    pub fn from_p1_code(code: u8) -> Self {
+    /// Decode a Protocol 1 device-type code. Returns `None` for codes that
+    /// don't map to a supported board.
+    pub fn from_p1_code(code: u8) -> Option<Self> {
         match code {
-            0 => Self::Atlas,
-            1 => Self::Hermes,
-            2 => Self::HermesII,
-            4 => Self::Angelia,
-            5 => Self::Orion,
-            6 => Self::HermesLite,
-            10 => Self::OrionMkII,
-            11 => Self::SaturnMkII,
-            12 => Self::Saturn,
-            c => Self::Unknown(c),
-        }
-    }
-
-    pub fn from_p2_code(code: u8) -> Self {
-        match code {
-            0 => Self::Atlas,
-            1 => Self::Hermes,
-            2 => Self::HermesII,
-            3 => Self::Angelia,
-            4 => Self::Orion,
-            5 => Self::OrionMkII,
-            6 => Self::HermesLite,
-            10 => Self::Saturn,
-            11 => Self::SaturnMkII,
-            c => Self::Unknown(c),
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name.to_lowercase().as_str() {
-            "atlas" => Some(Self::Atlas),
-            "hermes" => Some(Self::Hermes),
-            "hermesii" => Some(Self::HermesII),
-            "angelia" => Some(Self::Angelia),
-            "orion" => Some(Self::Orion),
-            "orionmkii" => Some(Self::OrionMkII),
-            "hermeslite" => Some(Self::HermesLite),
-            "saturn" => Some(Self::Saturn),
-            "saturnmkii" => Some(Self::SaturnMkII),
+            1 => Some(Self::Hermes),
+            6 => Some(Self::HermesLite),
             _ => None,
         }
     }
 
-    pub fn all_names() -> &'static [&'static str] {
-        &[
-            "atlas",
-            "hermes",
-            "hermesii",
-            "angelia",
-            "orion",
-            "orionmkii",
-            "hermeslite",
-            "saturn",
-            "saturnmkii",
-        ]
-    }
-
-    pub fn max_ddcs(self) -> u8 {
-        match self {
-            Self::Atlas => 2,
-            Self::Hermes => 4,
-            Self::HermesII => 4,
-            Self::Angelia => 5,
-            Self::Orion => 5,
-            Self::OrionMkII => 8,
-            Self::HermesLite => 2,
-            Self::Saturn => 10,
-            Self::SaturnMkII => 10,
-            Self::Unknown(_) => 1,
+    /// Decode a CLI / config name like "hermes" or "hermeslite"
+    /// (case-insensitive). `hermeslite2` is accepted as a synonym for
+    /// `HermesLite`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "hermes" => Some(Self::Hermes),
+            "hermeslite" | "hermeslite2" => Some(Self::HermesLite),
+            _ => None,
         }
     }
 
-    /// Default RX meter calibration offset: dBm = dBFS + offset.
-    ///
-    /// Accounts for ADC full-scale reference and typical front-end gain.
-    /// Based on Thetis/deskHPSDR calibration approach.
+    /// Canonical name list for CLI/help output.
+    pub fn all_names() -> &'static [&'static str] {
+        &["hermes", "hermeslite"]
+    }
+
+    /// Maximum number of DDC (digital down-converter) channels this board
+    /// supports.
+    pub fn max_ddcs(self) -> u8 {
+        match self {
+            Self::Hermes => 4,
+            Self::HermesLite => 2,
+        }
+    }
+
+    /// Default RX meter calibration offset: dBm = dBFS + offset. Accounts
+    /// for the ADC full-scale reference and typical front-end gain. Based
+    /// on Thetis/deskHPSDR calibration values.
     pub fn rx_meter_cal_offset(self) -> f64 {
         match self {
-            Self::Atlas => -20.0,
             Self::Hermes => -20.0,
-            Self::HermesII => -20.0,
-            Self::Angelia => -20.0,
-            Self::Orion => -20.0,
-            Self::OrionMkII => -14.0,
             Self::HermesLite => -19.0,
-            Self::Saturn => -20.0,
-            Self::SaturnMkII => -20.0,
-            Self::Unknown(_) => -20.0,
         }
     }
 }
@@ -190,16 +96,8 @@ impl HpsdrHw {
 impl fmt::Display for HpsdrHw {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Atlas => write!(f, "Atlas"),
             Self::Hermes => write!(f, "Hermes"),
-            Self::HermesII => write!(f, "HermesII"),
-            Self::Angelia => write!(f, "Angelia"),
-            Self::Orion => write!(f, "Orion"),
-            Self::OrionMkII => write!(f, "OrionMkII"),
             Self::HermesLite => write!(f, "HermesLite"),
-            Self::Saturn => write!(f, "Saturn"),
-            Self::SaturnMkII => write!(f, "SaturnMkII"),
-            Self::Unknown(c) => write!(f, "Unknown({})", c),
         }
     }
 }
@@ -229,11 +127,11 @@ pub fn p1_code_to_sample_rate(code: u8) -> Option<u32> {
 }
 
 // ---------------------------------------------------------------------------
-// Frequency-to-filter helpers
+// Frequency-to-filter helpers (Hermes with Alex board)
 // ---------------------------------------------------------------------------
 
-/// Alex TX LPF bit for C0=0x12 C4 (standard HPSDR with Alex board).
-/// Returns a single-bit value matching the Thetis `_rbpfilter` mapping.
+/// Alex TX LPF bit for C0=0x12 C4. Returns a single-bit value matching the
+/// Thetis `_rbpfilter` mapping.
 pub fn alex_tx_lpf_for_freq(freq_hz: u32) -> u8 {
     if freq_hz <= 2_500_000 {
         0x08 // 160m
@@ -252,8 +150,8 @@ pub fn alex_tx_lpf_for_freq(freq_hz: u32) -> u8 {
     }
 }
 
-/// Alex RX HPF bits for C0=0x12 C3 (standard HPSDR with Alex board).
-/// Returns the HPF selector bits matching the Thetis mapping.
+/// Alex RX HPF bits for C0=0x12 C3. Returns the HPF selector bits matching
+/// the Thetis mapping.
 pub fn alex_rx_hpf_for_freq(freq_hz: u32) -> u8 {
     if freq_hz < 1_500_000 {
         0x20 // bypass
@@ -306,7 +204,6 @@ pub struct DiscoveredDevice {
     pub mac: [u8; 6],
     pub hw_type: HpsdrHw,
     pub firmware_version: u8,
-    pub protocol: Protocol,
     pub num_rxs: u8,
     pub status: u8,
 }
@@ -315,13 +212,12 @@ impl fmt::Display for DiscoveredDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} at {} (MAC={}, FW={}, RXs={}, {})",
+            "{} at {} (MAC={}, FW={}, RXs={})",
             self.hw_type,
             self.addr,
             mac_to_string(&self.mac),
             self.firmware_version,
             self.num_rxs,
-            self.protocol,
         )
     }
 }
@@ -559,72 +455,42 @@ mod tests {
         assert_eq!(packed[3], 0); // R low
     }
 
-    // ---- HpsdrHw P1 code roundtrips ----
+    // ---- HpsdrHw P1 code roundtrip ----
 
     #[test]
     fn hpsdr_hw_p1_roundtrip() {
-        let variants = [
-            HpsdrHw::Atlas,
-            HpsdrHw::Hermes,
-            HpsdrHw::HermesII,
-            HpsdrHw::Angelia,
-            HpsdrHw::Orion,
-            HpsdrHw::OrionMkII,
-            HpsdrHw::HermesLite,
-            HpsdrHw::Saturn,
-            HpsdrHw::SaturnMkII,
-        ];
-        for hw in &variants {
+        for hw in [HpsdrHw::Hermes, HpsdrHw::HermesLite] {
             let code = hw.p1_code();
-            let recovered = HpsdrHw::from_p1_code(code);
-            assert_eq!(*hw, recovered, "P1 roundtrip failed for {:?}", hw);
+            assert_eq!(
+                HpsdrHw::from_p1_code(code),
+                Some(hw),
+                "P1 roundtrip failed for {:?}",
+                hw
+            );
         }
     }
 
     #[test]
-    fn hpsdr_hw_p2_roundtrip() {
-        let variants = [
-            HpsdrHw::Atlas,
-            HpsdrHw::Hermes,
-            HpsdrHw::HermesII,
-            HpsdrHw::Angelia,
-            HpsdrHw::Orion,
-            HpsdrHw::OrionMkII,
-            HpsdrHw::HermesLite,
-            HpsdrHw::Saturn,
-            HpsdrHw::SaturnMkII,
-        ];
-        for hw in &variants {
-            let code = hw.p2_code();
-            let recovered = HpsdrHw::from_p2_code(code);
-            assert_eq!(*hw, recovered, "P2 roundtrip failed for {:?}", hw);
-        }
+    fn hpsdr_hw_unknown_code_returns_none() {
+        assert_eq!(HpsdrHw::from_p1_code(99), None);
     }
 
     #[test]
-    fn hpsdr_hw_unknown_code() {
-        let hw = HpsdrHw::from_p1_code(99);
-        assert_eq!(hw, HpsdrHw::Unknown(99));
-        assert_eq!(hw.p1_code(), 99);
+    fn from_name_accepts_canonical_and_alias() {
+        assert_eq!(HpsdrHw::from_name("hermes"), Some(HpsdrHw::Hermes));
+        assert_eq!(HpsdrHw::from_name("HERMES"), Some(HpsdrHw::Hermes));
+        assert_eq!(HpsdrHw::from_name("hermeslite"), Some(HpsdrHw::HermesLite));
+        // `hermeslite2` is the user-facing model name; map it to HermesLite.
+        assert_eq!(HpsdrHw::from_name("hermeslite2"), Some(HpsdrHw::HermesLite));
+        assert_eq!(HpsdrHw::from_name("nope"), None);
     }
 
-    // ---- max_ddcs bounds ----
+    // ---- max_ddcs bound ----
 
     #[test]
     fn max_ddcs_positive() {
-        let variants = [
-            HpsdrHw::Atlas,
-            HpsdrHw::Hermes,
-            HpsdrHw::Angelia,
-            HpsdrHw::Orion,
-            HpsdrHw::OrionMkII,
-            HpsdrHw::HermesLite,
-            HpsdrHw::Saturn,
-            HpsdrHw::SaturnMkII,
-            HpsdrHw::Unknown(42),
-        ];
-        for hw in &variants {
-            assert!(hw.max_ddcs() >= 1, "max_ddcs should be >= 1 for {:?}", hw);
+        for hw in [HpsdrHw::Hermes, HpsdrHw::HermesLite] {
+            assert!(hw.max_ddcs() >= 1);
         }
     }
 

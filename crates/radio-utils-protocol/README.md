@@ -1,11 +1,10 @@
 # radio-utils-protocol
 
-`radio-utils-protocol` is a library implementation of the OpenHPSDR Protocol 1 and Protocol 2. It provides the low-level transport and packet logic required to communicate with HPSDR-compatible hardware.
+`radio-utils-protocol` is a library implementation of the OpenHPSDR Protocol 1 wire format. It provides the low-level transport and packet logic required to talk to a Hermes-class HPSDR radio.
 
 ## Features
 
 - **Protocol 1 Support:** Implementation of the classic 1032-byte UDP packet format.
-- **Protocol 2 Support:** Support for the newer variable-length, multi-port protocol.
 - **Discovery:** Tools for broadcasting and parsing discovery requests on the network.
 - **IQ Packing/Unpacking:** Efficient conversion between raw network bytes and complex DSP samples.
 - **no_std Support:** Core types and packet structures are compatible with embedded systems.

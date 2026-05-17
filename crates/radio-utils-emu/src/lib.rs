@@ -1,11 +1,11 @@
 //! OpenHPSDR Protocol-1 hardware emulator.
 //!
-//! Speaks the Hermes / Hermes Lite 2 / Angelia / Orion wire format end-to-end
-//! over UDP, so the rest of the workspace (and third-party clients like
-//! Thetis, deskHPSDR, the web client) can be developed and tested
-//! without real hardware. The CLI binary lives in `src/main.rs` —
-//! `cargo run --release -p radio-utils-emu -- --radio hermeslite --echo-live` is
-//! the standard "virtual band" launch.
+//! Speaks the Hermes / Hermes Lite 2 wire format end-to-end over UDP, so
+//! the rest of the workspace (and third-party clients like Thetis,
+//! deskHPSDR, the web client) can be developed and tested without real
+//! hardware. The CLI binary lives in `src/main.rs` —
+//! `cargo run --release -p radio-utils-emu -- --radio hermeslite --echo-live`
+//! is the standard "virtual band" launch.
 //!
 //! # Echo modes
 //!
@@ -107,8 +107,6 @@
 //!
 //! ## Out of scope (not planned)
 //!
-//! * Protocol-2 (Apollo / Anan) wire compatibility — separate crate
-//!   (`radio-utils-protocol`) handles the framing; emulator only speaks P1.
 //! * Real RF effects (band-edge attenuation, AGC capture, FM capture) —
 //!   the listener client owns DSP; the emulator just plays back the
 //!   summed waveform.

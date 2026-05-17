@@ -1,9 +1,9 @@
 //! OpenHPSDR Protocol 1 radio emulator.
 //!
-//! Emulates HPSDR hardware (Hermes, Angelia, Orion, etc.) over UDP so SDR
-//! applications like Thetis and deskHPSDR can discover and connect to it.
-//! Generates test tone + noise IQ data on all RX DDC channels and supports
-//! echo mode for TX→RX loopback testing.
+//! Emulates Hermes or Hermes Lite 2 hardware over UDP so SDR applications
+//! like Thetis and deskHPSDR can discover and connect to it. Generates test
+//! tone + noise IQ data on all RX DDC channels and supports echo mode for
+//! TX→RX loopback testing.
 
 use std::sync::Arc;
 
@@ -16,10 +16,10 @@ use radio_utils_emu::radio::{EchoBuffer, EchoMode, HpsdrHw, HwInfo};
 #[derive(Parser)]
 #[command(
     name = "radio-utils-emu",
-    about = "OpenHPSDR Protocol 1 radio emulator (Rust)"
+    about = "OpenHPSDR Protocol 1 radio emulator (Hermes / Hermes Lite 2)"
 )]
 struct Cli {
-    /// Radio hardware type
+    /// Radio hardware type. One of `hermes` or `hermeslite` (alias: `hermeslite2`).
     #[arg(long, value_parser = parse_radio)]
     radio: HpsdrHw,
 
