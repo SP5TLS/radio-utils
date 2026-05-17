@@ -76,9 +76,19 @@ fn macro_sends_and_completes() {
     let (_sender, kb_input) = KeyboardPaddleInput::new();
     let (mut handle, output_rx) = KeyerHandle::start(config, Box::new(kb_input));
 
+    // Let the keyer thread settle into its idle wait_for_change so the
+    // first cmd_rx drain happens promptly. Otherwise the macro can sit
+    // up to the full 100 ms idle quantum before the thread polls cmd_rx.
+    std::thread::sleep(Duration::from_millis(50));
+
     handle.send_macro("E".to_string()); // E = single dit
 
-    std::thread::sleep(Duration::from_millis(200));
+    // 40 WPM dit ≈ 30 ms + 50 ms hang = ~80 ms of engine time, but the
+    // cmd channel is poll-based (the keyer thread won't wake on cmd_tx
+    // until its idle wait_for_change expires), so total worst case is
+    // ~180 ms before KeyDown lands. 600 ms gives generous headroom for
+    // thread-starvation lag on macOS/Windows CI runners.
+    std::thread::sleep(Duration::from_millis(600));
     let mut outputs = Vec::new();
     while let Ok(out) = output_rx.try_recv() {
         outputs.push(out);
