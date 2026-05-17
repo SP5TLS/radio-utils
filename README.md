@@ -20,6 +20,15 @@ implement, and is independent of the keyer crate.
 
 ## Quick start
 
+The emulator binary is published on crates.io and installable directly:
+
+```bash
+cargo install radio-utils-emu --locked
+radio-utils-emu --radio hermeslite
+```
+
+From a source checkout:
+
 ```bash
 # Build everything
 cargo build --release

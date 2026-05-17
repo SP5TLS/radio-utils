@@ -25,16 +25,32 @@ physical hardware.
 - **Telemetry** — simulates forward/reverse power and supply voltage so
   client SWR meters animate.
 
+## Install
+
+From [crates.io](https://crates.io/crates/radio-utils-emu):
+```bash
+cargo install radio-utils-emu --locked
+```
+
+This drops a `radio-utils-emu` binary into `~/.cargo/bin/`. Pre-built
+binaries for common targets (Linux x86_64 / aarch64, macOS, Windows) are
+also attached to each GitHub release.
+
 ## Usage
 
-Run the emulator pretending to be a Hermes Lite 2 on the LAN:
+Run the installed binary pretending to be a Hermes Lite 2 on the LAN:
+```bash
+radio-utils-emu --radio hermeslite
+```
+
+Or run it from a source checkout without installing:
 ```bash
 cargo run --release -p radio-utils-emu -- --radio hermeslite
 ```
 
 Run it as a single-operator "virtual band" with live TX→RX feedback:
 ```bash
-cargo run --release -p radio-utils-emu -- --radio hermeslite --echo-live
+radio-utils-emu --radio hermeslite --echo-live
 ```
 
 Any HPSDR-compatible client (Thetis, deskHPSDR, piHPSDR, your own code)
