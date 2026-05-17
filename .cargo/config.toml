@@ -1,0 +1,11 @@
+# Web Serial is still an unstable web-sys API; the keyer's wasm32 build
+# guards it behind --cfg=web_sys_unstable_apis. Without this rustflag,
+# `web_sys::Navigator::serial()` resolves to `method not found`.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg=web_sys_unstable_apis"]
+
+# 16 KiB max-page-size for Android — required by Android 15+ since the
+# platform moved from 4 KiB to 16 KiB pages. Affects the runtime page
+# alignment of loadable ELF segments; harmless on older Android versions.
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-z", "-C", "link-arg=max-page-size=16384"]

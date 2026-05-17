@@ -1,0 +1,135 @@
+name: Release emulator
+
+# Tag a release (e.g. `v0.1.0`) to build and publish artifacts.
+# `workflow_dispatch` lets you trigger ad-hoc builds without tagging — the
+# binaries land in the run's artifact area but aren't attached to a release.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            use_cross: false
+            archive: tar.gz
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu   # Raspberry Pi 3B+/4/5/Zero 2 W, 64-bit Pi OS
+            use_cross: true
+            archive: tar.gz
+          - runner: macos-latest
+            target: aarch64-apple-darwin        # Apple Silicon
+            use_cross: false
+            archive: tar.gz
+          - runner: macos-latest
+            target: x86_64-apple-darwin         # Intel Mac
+            use_cross: false
+            archive: tar.gz
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            use_cross: false
+            archive: zip
+            exe: .exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build emulator (cargo)
+        if: '!matrix.use_cross'
+        run: cargo build --release --target ${{ matrix.target }} -p radio-utils-emu
+
+      - name: Build emulator (cross)
+        if: matrix.use_cross
+        run: cross build --release --target ${{ matrix.target }} -p radio-utils-emu
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="radio-utils-emu-${{ matrix.target }}"
+          staging="dist/$name"
+          mkdir -p "$staging"
+          cp "target/${{ matrix.target }}/release/radio-utils-emu${{ matrix.exe || '' }}" "$staging/"
+          cp LICENSE-MIT LICENSE-APACHE README.md "$staging/"
+          cp crates/radio-utils-emu/README.md "$staging/EMU-README.md"
+
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          tar -czf "radio-utils-emu-${{ matrix.target }}.tar.gz" "radio-utils-emu-${{ matrix.target }}"
+
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Set-Location dist
+          Compress-Archive -Path "radio-utils-emu-${{ matrix.target }}" `
+                           -DestinationPath "radio-utils-emu-${{ matrix.target }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: radio-utils-emu-${{ matrix.target }}
+          path: |
+            dist/radio-utils-emu-${{ matrix.target }}.tar.gz
+            dist/radio-utils-emu-${{ matrix.target }}.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attach to GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS 2>/dev/null || true
+          ls -la
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+          fail_on_unmatched_files: false
+          generate_release_notes: true
