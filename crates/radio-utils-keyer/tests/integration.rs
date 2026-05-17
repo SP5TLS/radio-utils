@@ -14,13 +14,26 @@ fn full_keyer_cycle_keyboard_iambic_b() {
     let (sender, kb_input) = KeyboardPaddleInput::new();
     let (mut handle, output_rx) = KeyerHandle::start(config, Box::new(kb_input));
 
-    // Send dit
+    // Let the keyer thread enter its first wait_for_change before sending
+    // events — otherwise both DitDown and DitUp can land in the same
+    // pre-startup batch, where `drain_events` collapses them to a final
+    // state of (false, false) and the engine never sees the rising edge.
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Hold the dit longer than the keyer thread's 100 ms idle-wait
+    // timeout. Once the engine is active the poll drops to 1 ms, so a
+    // short release is fine — but the *initial* press must outlast one
+    // idle quantum for the dit to register on slow CI runners.
     sender.send(PaddleEvent::DitDown);
-    std::thread::sleep(Duration::from_millis(10));
+    std::thread::sleep(Duration::from_millis(150));
     sender.send(PaddleEvent::DitUp);
 
-    // Collect outputs over 300ms
-    std::thread::sleep(Duration::from_millis(300));
+    // 30 WPM dit = 40 ms, hang_time = 100 ms, so PttRequest(false)
+    // arrives ~140 ms after press. Give 800 ms for headroom against
+    // thread-starvation lag on macOS/Windows CI runners (the tick
+    // batch is capped at 4 ms, so real-time ticks get dropped under
+    // load).
+    std::thread::sleep(Duration::from_millis(800));
     let mut outputs = Vec::new();
     while let Ok(out) = output_rx.try_recv() {
         outputs.push(out);
