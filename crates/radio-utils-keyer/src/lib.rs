@@ -13,7 +13,7 @@ pub mod input;
 #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
 mod handle;
 
-pub use config::{KeyerConfig, KeyerMode, MidiBindKind, MidiBinding, SerialPin};
+pub use config::{KeyerConfig, KeyerMode, MidiBindKind, MidiBinding, SerialPin, UsbEmitStyle};
 pub use engine::{KeyTransition, KeyerEngine, KeyerOutput, KeyerState};
 pub use morse::{char_to_morse, text_to_elements, MorseElement, MORSE_TABLE};
 pub use sidetone::Sidetone;

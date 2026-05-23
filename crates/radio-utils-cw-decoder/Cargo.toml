@@ -1,0 +1,15 @@
+[package]
+name = "radio-utils-cw-decoder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Streaming CW (Morse) decoder — no_std, no alloc"
+readme = "README.md"
+keywords = ["ham-radio", "morse", "cw", "decoder", "amateur-radio"]
+categories = ["embedded", "no-std"]
+rust-version = "1.87"
+
+[dependencies]
+heapless = { version = "0.8", default-features = false }

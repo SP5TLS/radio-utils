@@ -1,6 +1,6 @@
 name: Publish to crates.io
 
-# Tagging `vX.Y.Z` publishes all three crates in dependency order. The
+# Tagging `vX.Y.Z` publishes all four crates in dependency order. The
 # emulator-binary build (release.yml) and this workflow are independent —
 # they both fire on the same tag.
 on:
@@ -40,6 +40,13 @@ jobs:
             exit 1
           fi
           echo "Publishing $ws"
+
+      - name: Publish radio-utils-cw-decoder
+        # No path deps on the other workspace crates, so order vs. the
+        # rest is irrelevant.
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p radio-utils-cw-decoder
 
       - name: Publish radio-utils-keyer
         env:

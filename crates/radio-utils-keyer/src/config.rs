@@ -24,6 +24,21 @@ pub enum SerialPin {
     RI,
 }
 
+/// How the firmware encodes paddle/keyer activity onto USB transports
+/// (serial DCD/DSR + MIDI notes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UsbEmitStyle {
+    /// cw-adapter-compatible: emit raw paddle press/release edges.  The
+    /// host (e.g. vail-adapter) does its own keying.  Two MIDI notes
+    /// (dit / dah) and two serial bits (DCD / DSR).
+    Paddle,
+    /// Send the keyed signal that the on-board engine produces — one
+    /// MIDI note + one serial bit toggle per Morse element, including
+    /// inter-element gaps.  Useful when you want the host to log or
+    /// retransmit the already-decoded CW the radio is hearing.
+    Keyed,
+}
+
 /// Which kind of MIDI message carries the paddle signal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MidiBindKind {
@@ -107,6 +122,15 @@ pub struct KeyerConfig {
     pub dynamic_ratio_high_wpm: u8,
     /// Eight programmable macro slots.
     pub macros: [String; 8],
+    /// How to encode keyer activity onto USB transports.  Default
+    /// `Paddle` preserves the cw-adapter wire contract; `Keyed` emits
+    /// the engine's keyed signal as a single MIDI note + DCD bit.
+    pub usb_emit_style: UsbEmitStyle,
+    /// CW decoder display toggle. When true, hosts (e.g. the firmware
+    /// OLED) show decoded text from the engine's keyed output stream;
+    /// when false, the display is hidden. The decoder itself is cheap
+    /// enough that we always run it — only the display is gated.
+    pub decoder_enabled: bool,
 }
 
 impl Default for KeyerConfig {
@@ -136,6 +160,8 @@ impl Default for KeyerConfig {
             dynamic_ratio_low_wpm: 30,
             dynamic_ratio_high_wpm: 70,
             macros: Default::default(),
+            usb_emit_style: UsbEmitStyle::Paddle,
+            decoder_enabled: true,
         }
     }
 }

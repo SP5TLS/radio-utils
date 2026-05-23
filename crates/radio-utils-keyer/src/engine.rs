@@ -51,12 +51,19 @@ pub struct KeyTransition {
 /// timing contract there.
 const STRAIGHT_KEY_RELEASE_DEBOUNCE_MS: u32 = 20;
 
-/// Cap on the in-engine `transitions` ring. The buffer is meant to be
-/// drained periodically by the host; if drain stops (proxy disconnect,
-/// stuck consumer) we trim the oldest entries rather than grow without
-/// bound. Recent transitions matter more for live keying than ancient
-/// ones, so we drop from the front. 1024 entries ≈ 16 KiB.
-const MAX_RECORDED_TRANSITIONS: usize = 1024;
+/// Cap on the in-engine `transitions` ring.  Backed by `heapless::Deque`
+/// so the buffer is inline in `KeyerEngine` (no heap allocation) and
+/// both record and overflow-evict are O(1) — the previous
+/// `Vec::remove(0)` strategy was an O(n) memmove on every recorded
+/// transition once at cap, which jittered the IRQ-mode tick path in
+/// the firmware.
+///
+/// 64 entries (~1 KiB inline) holds several seconds of continuous
+/// keying at sane WPM without trimming; consumers that drain
+/// periodically (firmware does not — the engine self-trims) see the
+/// most recent 64 transitions on each call.  Recent matter more than
+/// ancient, so eviction drops from the front.
+const MAX_RECORDED_TRANSITIONS: usize = 64;
 
 /// The iambic keyer engine.
 pub struct KeyerEngine {
@@ -82,21 +89,60 @@ pub struct KeyerEngine {
     /// Full duration of the current element in µs — used by the iambic-B
     /// CMOS timing gate to compute the memory-latch window.
     element_duration_us: u32,
-    hang_counter: u32,
+    /// Hang-time accumulator, in microseconds. Counts up by `tick_us`
+    /// each `tick()` and is compared against `config.hang_time_ms * 1000`.
+    /// Counting in µs (rather than ticks) keeps the long-run hang window
+    /// matched to wall clock regardless of the tick quantum.
+    ///
+    /// Increments use `saturating_add` purely as defence against a
+    /// pathological `tick_us` — at realistic hang-time configs (default
+    /// 500 ms) the counter caps four orders of magnitude below
+    /// `u32::MAX`, so saturation never bites in practice.
+    hang_counter_us: u32,
     ptt_active: bool,
     key_active: bool,
     pub text_queue: VecDeque<MorseElement>,
     text_sending: bool,
-    /// Monotonic tick counter (microseconds), incremented by 1000 per tick().
+    /// Monotonic time counter in microseconds, incremented by `tick_us`
+    /// each `tick()`.
     elapsed_us: u64,
-    transitions: Vec<KeyTransition>,
-    /// Tick counter while waiting out a straight-key release-debounce
-    /// window. 0 when no release is pending. Reset to 0 on re-press.
-    straight_release_grace: u32,
+    transitions: heapless::Deque<KeyTransition, MAX_RECORDED_TRANSITIONS>,
+    /// Straight-key release-debounce accumulator in microseconds. 0
+    /// when no release is pending. Counts up by `tick_us` per tick;
+    /// compared against `STRAIGHT_KEY_RELEASE_DEBOUNCE_MS * 1000`.
+    /// `saturating_add` is defence-in-depth — same rationale as
+    /// `hang_counter_us`: the 20 ms ceiling is nowhere near `u32::MAX`.
+    straight_release_grace_us: u32,
+    /// Microseconds per `tick()` call.  All time-accounting fields
+    /// advance by this amount; the schedule_phase continuity window
+    /// and the per-element overshoot are bounded by this value.  Set
+    /// once at construction (`new` defaults to 1 ms; `new_with_tick`
+    /// lets a fast-cadence host like the embedded firmware drop it to
+    /// 250 µs so individual element durations vary by ≤ 250 µs instead
+    /// of ≤ 1 ms).
+    tick_us: u32,
 }
 
 impl KeyerEngine {
+    /// Construct with the default 1 ms tick quantum.
     pub fn new(config: KeyerConfig) -> Self {
+        Self::new_with_tick(config, 1000)
+    }
+
+    /// Construct with a custom tick quantum in microseconds.
+    ///
+    /// Smaller values reduce per-element timing overshoot (bounded by
+    /// `tick_us`) at the cost of more `tick()` calls per second.  The
+    /// firmware uses 250 µs to match its paddle-poll cadence so that
+    /// individual element durations at 28 WPM vary by ≤ 250 µs instead
+    /// of the ≤ 1 ms allowed by the default.
+    ///
+    /// Panics if `tick_us == 0` — with a zero quantum `tick()` would
+    /// never advance `elapsed_us` and the engine would silently stop
+    /// progressing. A one-time construction-time check is cheaper than
+    /// debugging that.
+    pub fn new_with_tick(config: KeyerConfig, tick_us: u32) -> Self {
+        assert!(tick_us > 0, "KeyerEngine tick_us must be > 0");
         Self {
             config,
             state: KeyerState::Idle,
@@ -108,14 +154,15 @@ impl KeyerEngine {
             single_paddle_decided: false,
             phase_end_us: 0,
             element_duration_us: 0,
-            hang_counter: 0,
+            hang_counter_us: 0,
             ptt_active: false,
             key_active: false,
             text_queue: VecDeque::new(),
             text_sending: false,
             elapsed_us: 0,
-            transitions: Vec::new(),
-            straight_release_grace: 0,
+            transitions: heapless::Deque::new(),
+            straight_release_grace_us: 0,
+            tick_us,
         }
     }
 
@@ -180,9 +227,16 @@ impl KeyerEngine {
         self.text_sending = false;
     }
 
-    /// Drain and return recorded key transitions.
+    /// Drain and return recorded key transitions in oldest-first order.
+    ///
+    /// The internal buffer is a fixed-capacity ring; this is the only
+    /// way to observe its contents and also resets it to empty.
     pub fn drain_transitions(&mut self) -> Vec<KeyTransition> {
-        core::mem::take(&mut self.transitions)
+        let mut out = Vec::with_capacity(self.transitions.len());
+        while let Some(t) = self.transitions.pop_front() {
+            out.push(t);
+        }
+        out
     }
 
     /// Returns true if the engine is active (not idle, or PTT active, or queue not empty).
@@ -191,11 +245,15 @@ impl KeyerEngine {
     }
 
     /// Record a key transition with timestamp (derived from tick count).
+    ///
+    /// On overflow we drop the oldest entry (O(1) `pop_front`) and push
+    /// the new one (O(1) `push_back`).  `push_back` cannot fail after
+    /// the explicit eviction since the deque is now below capacity.
     fn record_transition(&mut self, key_down: bool) {
-        if self.transitions.len() >= MAX_RECORDED_TRANSITIONS {
-            self.transitions.remove(0);
+        if self.transitions.is_full() {
+            self.transitions.pop_front();
         }
-        self.transitions.push(KeyTransition {
+        let _ = self.transitions.push_back(KeyTransition {
             key_down,
             timestamp_us: self.elapsed_us,
         });
@@ -204,7 +262,7 @@ impl KeyerEngine {
     /// Emit KeyDown: set key_active, record transition.
     fn emit_key_down(&mut self) -> KeyerOutput {
         self.key_active = true;
-        self.hang_counter = 0;
+        self.hang_counter_us = 0;
         self.record_transition(true);
         KeyerOutput::KeyDown
     }
@@ -223,11 +281,11 @@ impl KeyerEngine {
     ///
     /// * **Continuous** — `schedule_phase` is invoked on the same tick as
     ///   the prior phase's expiration, so `elapsed_us - phase_end_us` is
-    ///   the sub-millisecond overshoot in `[0, 1000)` µs. The new deadline
-    ///   is anchored to the old `phase_end_us`, carrying that residual
-    ///   forward so the long-run rate matches the configured WPM. This is
-    ///   the iambic send/gap loop, the auto-spacing letter-gap insertion,
-    ///   and the text-queue gap dispatch.
+    ///   the sub-tick overshoot in `[0, tick_us)`. The new deadline is
+    ///   anchored to the old `phase_end_us`, carrying that residual
+    ///   forward so the long-run rate matches the configured WPM. This
+    ///   is the iambic send/gap loop, the auto-spacing letter-gap
+    ///   insertion, and the text-queue gap dispatch.
     ///
     /// * **Fresh** — we're waking from Idle after a paddle-up period (or
     ///   from initial construction). `phase_end_us` is at least one whole
@@ -236,11 +294,11 @@ impl KeyerEngine {
     ///   was arbitrary, not WPM-derived.
     ///
     /// The strict `>` below is the exact separator: `tick()` fires when
-    /// `elapsed_us >= phase_end_us` with overshoot in `[0, 1000)` µs, so
-    /// `phase_end_us + 1000 > elapsed_us` is true iff we're still inside
-    /// the tick that expired the phase.
+    /// `elapsed_us >= phase_end_us` with overshoot in `[0, tick_us)`, so
+    /// `phase_end_us + tick_us > elapsed_us` is true iff we're still
+    /// inside the tick that expired the phase.
     fn schedule_phase(&mut self, duration_us: u32) {
-        let base = if self.phase_end_us + 1000 > self.elapsed_us {
+        let base = if self.phase_end_us + self.tick_us as u64 > self.elapsed_us {
             self.phase_end_us
         } else {
             self.elapsed_us
@@ -342,8 +400,8 @@ impl KeyerEngine {
     /// Handle hang time countdown for PTT release in idle state.
     fn handle_hang_time(&mut self) -> Option<KeyerOutput> {
         if self.ptt_active && !self.key_active {
-            self.hang_counter += 1;
-            if self.hang_counter >= self.config.hang_time_ms {
+            self.hang_counter_us = self.hang_counter_us.saturating_add(self.tick_us);
+            if self.hang_counter_us >= self.config.hang_time_ms.saturating_mul(1000) {
                 return self.maybe_emit_ptt(false);
             }
         }
@@ -361,7 +419,7 @@ impl KeyerEngine {
     /// WPM-derived.
     fn enter_idle_from_delay(&mut self) {
         self.state = KeyerState::Idle;
-        self.hang_counter = 0;
+        self.hang_counter_us = 0;
         self.text_sending = false;
         // Clear cross-session keyer state so the next session starts fresh.
         // Without this, Ultimatic could carry a stale `last_paddle` from a
@@ -378,9 +436,11 @@ impl KeyerEngine {
         self.dash_memory = false;
     }
 
-    /// Advance the state machine by 1 ms. Returns output if key state changed.
+    /// Advance the state machine by `tick_us` microseconds (1 ms by
+    /// default; see `new_with_tick`). Returns output if key state
+    /// changed.
     pub fn tick(&mut self) -> Option<KeyerOutput> {
-        self.elapsed_us += 1000;
+        self.elapsed_us += self.tick_us as u64;
         match self.config.mode {
             KeyerMode::Straight => self.tick_straight(),
             KeyerMode::Bug => self.tick_bug(),
@@ -396,7 +456,7 @@ impl KeyerEngine {
             KeyerState::Idle => {
                 if any_held {
                     self.state = KeyerState::StraightKey;
-                    self.straight_release_grace = 0;
+                    self.straight_release_grace_us = 0;
                     // Emit PTT first if needed
                     if let Some(ptt) = self.maybe_emit_ptt(true) {
                         // We'll emit KeyDown on next tick
@@ -406,8 +466,8 @@ impl KeyerEngine {
                 }
                 // Handle hang time for PTT
                 if self.ptt_active && !self.key_active {
-                    self.hang_counter += 1;
-                    if self.hang_counter >= self.config.hang_time_ms {
+                    self.hang_counter_us = self.hang_counter_us.saturating_add(self.tick_us);
+                    if self.hang_counter_us >= self.config.hang_time_ms.saturating_mul(1000) {
                         return self.maybe_emit_ptt(false);
                     }
                 }
@@ -428,11 +488,14 @@ impl KeyerEngine {
                     // KeyUp → KeyDown and the operator would see a
                     // short carrier blip + silence + the sustained
                     // carrier they meant to send.
-                    self.straight_release_grace += 1;
-                    if self.straight_release_grace >= STRAIGHT_KEY_RELEASE_DEBOUNCE_MS {
-                        self.straight_release_grace = 0;
+                    self.straight_release_grace_us =
+                        self.straight_release_grace_us.saturating_add(self.tick_us);
+                    if self.straight_release_grace_us
+                        >= STRAIGHT_KEY_RELEASE_DEBOUNCE_MS.saturating_mul(1000)
+                    {
+                        self.straight_release_grace_us = 0;
                         self.state = KeyerState::Idle;
-                        self.hang_counter = 0;
+                        self.hang_counter_us = 0;
                         return Some(self.emit_key_up());
                     }
                     return None;
@@ -440,7 +503,7 @@ impl KeyerEngine {
                 // Held — make sure any pending release counter is
                 // cleared so a future genuine release starts a fresh
                 // grace window from zero.
-                self.straight_release_grace = 0;
+                self.straight_release_grace_us = 0;
                 None
             }
             _ => None,
@@ -467,7 +530,7 @@ impl KeyerEngine {
             }
             if !self.dash_held {
                 self.state = KeyerState::Idle;
-                self.hang_counter = 0;
+                self.hang_counter_us = 0;
                 return Some(self.emit_key_up());
             }
             return None;
@@ -1797,8 +1860,12 @@ mod tests {
     ) -> i64 {
         engine.set_paddle(true, false);
 
-        // (warmup + measured_cycles + 1) cycles' worth of ticks + slack.
-        let max_ticks = (((measured_cycles as u64 + 3) * cycle_us) / 1000) as u32 + 200;
+        // (warmup + measured_cycles + 1) cycles' worth of ticks + slack —
+        // scaled by the engine's actual tick quantum so a sub-ms engine
+        // gets enough iterations to reach the target cycle count.
+        let tick_us = engine.tick_us as u64;
+        let max_ticks = (((measured_cycles as u64 + 3) * cycle_us) / tick_us) as u32
+            + (200 * 1000 / tick_us as u32);
 
         let warmup = 1u32;
         let target_downs = warmup + measured_cycles + 1;
@@ -1899,5 +1966,79 @@ mod tests {
                 "SinglePaddle at {wpm} WPM: drift {drift} µs over 25 cycles exceeds one tick quantum"
             );
         }
+    }
+
+    /// Sub-millisecond tick quantum (the firmware's 250 µs cadence).
+    /// Drift across 50 cycles must stay inside the *new* tick quantum,
+    /// not the default ms — that's the whole point of the config.
+    #[test]
+    fn no_accumulated_drift_at_28_wpm_250us_tick() {
+        let mut config = KeyerConfig::default();
+        config.speed_wpm = 28;
+        config.mode = KeyerMode::IambicB;
+        let engine = KeyerEngine::new_with_tick(config, 250);
+        let dot_us = 1_200_000u64 / 28;
+        let drift = measure_dit_repeat_drift(engine, 2 * dot_us, 50);
+        assert!(
+            drift.abs() < 250,
+            "28 WPM @ 250 µs tick: drift {drift} µs over 50 cycles exceeds 250 µs quantum"
+        );
+    }
+
+    /// At a sub-millisecond tick the per-cycle jitter — the variation
+    /// in element duration between successive cycles — must also stay
+    /// inside the tick quantum.  This is the user-perceived
+    /// non-uniformity: at 1 ms ticks, 28 WPM dits alternate 42 / 43
+    /// ms in a repeating pattern (1 ms swing); at 250 µs they vary by
+    /// at most 250 µs.
+    #[test]
+    fn dit_duration_jitter_within_tick_quantum_250us() {
+        let mut config = KeyerConfig::default();
+        config.speed_wpm = 28;
+        config.mode = KeyerMode::IambicB;
+        let mut engine = KeyerEngine::new_with_tick(config, 250);
+
+        // Hold the dit paddle so dits auto-repeat.
+        engine.set_paddle(true, false);
+
+        // Walk far enough to see ~30 KeyDown→KeyUp cycles; max_us is
+        // the worst-case wall time (with 1 ms tick this would never
+        // overshoot by more than 30 ms — leave plenty of slack).
+        let dot_us: i64 = 1_200_000 / 28; // 42857
+        let cycles_wanted = 30;
+        let max_ticks = 4 * 1000 * cycles_wanted; // 30 cycles ≈ 2.5 s
+
+        let mut down_ts: Vec<u64> = Vec::new();
+        for _ in 0..max_ticks {
+            if let Some(KeyerOutput::KeyDown) = engine.tick() {
+                down_ts.push(engine.elapsed_us);
+                if down_ts.len() > cycles_wanted as usize {
+                    break;
+                }
+            }
+        }
+        assert!(
+            down_ts.len() > cycles_wanted as usize,
+            "expected > {cycles_wanted} KeyDown events, got {}",
+            down_ts.len()
+        );
+
+        // First cycle includes the PttRequest pre-roll, so drop it.
+        let intervals: Vec<i64> = down_ts
+            .windows(2)
+            .skip(1)
+            .map(|w| (w[1] - w[0]) as i64)
+            .collect();
+        let min = *intervals.iter().min().unwrap();
+        let max = *intervals.iter().max().unwrap();
+        let span = max - min;
+        // Expected cycle = 2 × dot_us = 85714 µs.  Each interval must
+        // be inside [85714 - 250, 85714 + 250] and the swing must not
+        // exceed one tick quantum.
+        assert!(
+            span <= 250,
+            "dit cycle jitter {span} µs (min {min}, max {max}, ideal {}) exceeds 250 µs",
+            2 * dot_us
+        );
     }
 }

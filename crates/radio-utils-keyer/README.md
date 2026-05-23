@@ -112,5 +112,5 @@ app-level end-to-end testing.
 
 ## License
 
-Dual MIT / Apache-2.0 — see the workspace [LICENSE-MIT](../../LICENSE-MIT)
-and [LICENSE-APACHE](../../LICENSE-APACHE).
+Dual MIT / Apache-2.0 — see [LICENSE-MIT](LICENSE-MIT) and
+[LICENSE-APACHE](LICENSE-APACHE).

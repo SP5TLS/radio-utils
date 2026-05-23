@@ -23,6 +23,10 @@ serde = { version = "1", default-features = false, features = ["derive", "alloc"
 log = { workspace = true }
 libm = { workspace = true }
 crossbeam-channel = { workspace = true, optional = true }
+# Fixed-size ring buffer for the engine's transition log — keeps record /
+# evict at O(1) without a heap allocation per overflow.  Same major as
+# the firmware crate so cargo only compiles heapless once.
+heapless = { version = "0.8", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 web-time = { version = "1", optional = true }

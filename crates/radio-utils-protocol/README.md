@@ -47,5 +47,5 @@ The `no_std`-friendly core types and packet codecs are available with
 
 ## License
 
-Dual MIT / Apache-2.0 — see [LICENSE-MIT](../../LICENSE-MIT) and
-[LICENSE-APACHE](../../LICENSE-APACHE).
+Dual MIT / Apache-2.0 — see [LICENSE-MIT](LICENSE-MIT) and
+[LICENSE-APACHE](LICENSE-APACHE).
