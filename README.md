@@ -10,6 +10,7 @@ emulator, with no broader SDR framework to drag along.
 | Crate | Purpose |
 |-------|---------|
 | [**radio-utils-keyer**](crates/radio-utils-keyer) | CW (Morse) keyer engine — iambic A/B, straight, bug, ultimatic, single-paddle, with Farnsworth spacing, weighting, dynamic dah ratio, sidetone generation, keyboard / serial-modem / MIDI / WebMIDI / Web-Serial / Android USB-OTG paddle inputs, and text macros. No workspace dependencies; the engine core is `no_std`. |
+| [**radio-utils-cw-decoder**](crates/radio-utils-cw-decoder) | Streaming CW (Morse) decoder — edge-driven, sender-WPM aware, `no_std` with no allocator. All state inline (~32-byte recent-history ring + packed `u8` accumulator) so it fits in an interrupt-priority task on bare-metal microcontrollers. No workspace dependencies. |
 | [**radio-utils-protocol**](crates/radio-utils-protocol) | Library implementation of the [OpenHPSDR](http://openhpsdr.org/) Protocol 1 (legacy 1032-byte UDP) wire format — discovery, IQ pack/unpack, control commands, async `Protocol1Client`. `no_std`-friendly core types. |
 | [**radio-utils-emu**](crates/radio-utils-emu) | Standalone [OpenHPSDR](http://openhpsdr.org/) Protocol 1 Hermes / Hermes Lite 2 emulator. Lets you develop and test SDR clients (Thetis, deskHPSDR, custom code) against a virtual radio without owning hardware. Supports multi-client live-mixed echo for "virtual band" deployments. Depends on `radio-utils-protocol`. |
 
